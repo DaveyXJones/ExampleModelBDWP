@@ -81,7 +81,14 @@ SIDES = {
     "S": dict(sec="SEC_WallSouth", along="x", face=YS, sign=+1),
     "W": dict(sec="SEC_WallWest", along="y", face=XW, sign=+1),
 }
-FULL_HEIGHT_SIDE = "W"                                     # full-height upgrade wall
+FULL_HEIGHT_SIDE = "W"                                     # full-wall upgrade (an E or W wall: N/S own the corners)
+# Full-wall upgrade, from the wall out: dimple board (optional on real jobs, shown here), an 11-14 mil white
+# vapor barrier over the whole wall that wraps WRAP onto the next walls, then the standard 2 ft system on top.
+BARRIER_T = 0.002                                          # the barrier, drawn 2 mm thick
+WRAP = 18 * IN                                             # wraps 1-2 ft around each corner
+WRAP_GAP = 0.02                                            # the sheet that moves stops this short of each corner;
+                                                           # the corner strips belong to the wraps (they stay)
+UPG_T = DIMPLE_T + BARRIER_T                               # what sits behind the 2 ft system on the upgrade wall
 POURED_SIDES = {"N"}                                       # poured concrete (with the crack); the rest are block
 POURED_TILE = 4 * FT                                       # poured texture: 4 ft square, form seams every 2 ft
 WINDOWS = {"N": (2 * BLOCK_L, 4 * BLOCK_L), "S": (-4 * BLOCK_L, -2 * BLOCK_L)}
@@ -144,6 +151,18 @@ def span(side):
 
 def owns_corners(side):
     return SIDES[side]["along"] == "x"      # north and south walls run through the corners
+
+
+def sys_off(side):
+    """How far a wall's standard 2 ft system sits off its face (the upgrade wall has dimple + barrier behind)."""
+    return UPG_T if side == FULL_HEIGHT_SIDE else 0.0
+
+
+def end_wall(side, end):
+    """The wall at this end ('lo' or 'hi') of a wall."""
+    if SIDES[side]["along"] == "x":
+        return "W" if end == "lo" else "E"
+    return "S" if end == "lo" else "N"
 
 
 def lin(c):
@@ -560,6 +579,28 @@ def tex_pea_gravel(rng, H=512, n=440):
     return rgb
 
 
+def tex_vapor_barrier(rng, H=1024, per_m=40, k=9.0):
+    """11-14 mil white vapor barrier: anti-rip fibres woven in (a fine diamond scrim, 1" apart at 1 m per
+    tile) and soft folds where it hangs. Returns colour (H) and a fold normal map (H/2)."""
+    h2 = H // 2
+    folds = noise(rng, (h2 // 8, h2), 10)                  # long, vertical-ish folds: few rows, many columns
+    folds = blur_wrap(np.repeat(folds, 8, axis=0), 2.0)
+    folds = (folds - folds.mean()) / (folds.std() + 1e-8)
+    gx = (np.roll(folds, -1, 1) - np.roll(folds, 1, 1)) * 0.5
+    gy = (np.roll(folds, -1, 0) - np.roll(folds, 1, 0)) * 0.5
+    nx, ny, nz = -gx * k / 8.0, -gy * k / 8.0, np.ones_like(folds)
+    L = np.sqrt(nx * nx + ny * ny + nz * nz)
+    nrm = np.stack([nx / L * 0.5 + 0.5, ny / L * 0.5 + 0.5, nz / L * 0.5 + 0.5], -1)
+    yy, xx = np.mgrid[0:H, 0:H].astype(np.float32)
+    sp = H / per_m
+    d1, d2 = (xx + yy) % sp, (xx - yy) % sp
+    fibre = (np.minimum(d1, sp - d1) < 1.1) | (np.minimum(d2, sp - d2) < 1.1)
+    shade = np.kron(folds, np.ones((2, 2), np.float32))
+    v = 0.885 + 0.02 * shade + 0.008 * noise(rng, (H, H), 0)
+    v = np.where(fibre, v * 0.93, v)
+    return np.stack([v * 0.99, v, v * 1.015], -1), nrm
+
+
 def tex_dimple(H=512, n=5, k=18.0):
     sp = H / n
     r = 0.36 * sp
@@ -607,7 +648,10 @@ def make_textures():
     pc, pn = tex_pipe(rng)
     T["pipe"] = save_image("drainpipe_basecolor", pc, "JPEG")
     T["pipe_n"] = save_image("drainpipe_normal", pn, "PNG", non_color=True)
-    T["pea"] = save_image("peagravel_basecolor", tex_pea_gravel(rng), "JPEG")   # last, so the others stay as they were
+    T["pea"] = save_image("peagravel_basecolor", tex_pea_gravel(rng), "JPEG")   # new ones go last, so the others
+    bc, bn = tex_vapor_barrier(rng)                                              # stay as they were
+    T["barrier"] = save_image("vaporbarrier_basecolor", bc, "JPEG")
+    T["barrier_n"] = save_image("vaporbarrier_normal", bn, "PNG", non_color=True)
     return T
 
 
@@ -658,6 +702,7 @@ def make_materials(T):
         "patch": make_mat("MAT_ConcretePatch", (0.52, 0.52, 0.5), 0.82, tex=T["patch"]),
         "stone": make_mat("MAT_Stone", (0.5, 0.48, 0.45), 0.9, tex=T["gravel"]),
         "pea": make_mat("MAT_PeaGravel", (0.6, 0.55, 0.48), 0.85, tex=T["pea"]),
+        "barrier": make_mat("MAT_VaporBarrier", (0.9, 0.9, 0.91), 0.45, tex=T["barrier"], normal=T["barrier_n"]),
         "subbase": make_mat("MAT_SubBase", (0.36, 0.31, 0.26), 1.0),
         "pvc": make_mat("MAT_PVC", (0.93, 0.93, 0.92), 0.35),
         "pipe": make_mat("MAT_DrainPipe", (0.92, 0.92, 0.91), 0.45, tex=T["pipe"], normal=T["pipe_n"]),
@@ -777,24 +822,54 @@ def build_wall(side, M, root):
         mb.wbox(side, w0 + fw, w1 - fw, -WALL_T / 2 - 0.003, -WALL_T / 2 + 0.003, z0 + fw, z1 - fw, M["glass"])
         mb.finish(f"SHELL_Window_{side}", sec, coll)
 
-    full = side == FULL_HEIGHT_SIDE
-    top = (WALL_TOP - 0.01) if full else (FOOT_TOP + SYS_H)
+    off = sys_off(side)                                   # this wall's 2 ft system sits this far off the face
+    lo_off, hi_off = sys_off(end_wall(side, "lo")), sys_off(end_wall(side, "hi"))
+    top = FOOT_TOP + SYS_H
 
-    # dimple board: vertical leg on the wall + 6" leg across the footing
+    if side == FULL_HEIGHT_SIDE:
+        # full-wall upgrade: dimple board behind the barrier (not on every job), full height
+        mb = MB()
+        mb.wbox(side, s_lo, s_hi, 0, DIMPLE_T, FOOT_TOP, WALL_TOP - 0.01, M["dimple"], tile=0.15, voff=FOOT_TOP)
+        mb.finish(f"PART_BarrierDimple_{side}", sec, coll)
+        # the vapor barrier sheet, down to the footing behind the 2 ft system; its corner strips and the
+        # wraps onto the next walls are SHELL_BarrierWrap_* in those walls
+        mb = MB()
+        mb.wbox(side, s_lo + WRAP_GAP, s_hi - WRAP_GAP, DIMPLE_T, UPG_T, FOOT_TOP, WALL_TOP - 0.005, M["barrier"], tile=1.0)
+        mb.finish(f"PART_VaporBarrier_{side}", sec, coll)
+
+    for end in ("lo", "hi"):
+        nb = end_wall(side, end)
+        if nb != FULL_HEIGHT_SIDE or not corners:
+            continue
+        # the upgrade wall's barrier wraps around this corner onto this wall. It stays put; where this wall's
+        # dimple board covers it, it sits inside the board, so it shows once this wall's system lifts away.
+        mb = MB()
+        s0, s1 = (s_lo + DIMPLE_T, s_lo + WRAP) if end == "lo" else (s_hi - WRAP, s_hi - DIMPLE_T)
+        mb.wbox(side, s0, s1, 0.001, 0.001 + BARRIER_T, FOOT_TOP, WALL_TOP - 0.005, M["barrier"], tile=1.0)
+        n_lo, n_hi = span(nb)
+        c0, c1 = ((n_hi - WRAP_GAP, n_hi - 0.001) if abs(SIDES[side]["face"] - n_hi) < 1e-6
+                  else (n_lo + 0.001, n_lo + WRAP_GAP))
+        mb.wbox(nb, c0, c1, DIMPLE_T, UPG_T, FOOT_TOP, WALL_TOP - 0.005, M["barrier"], tile=1.0)
+        mb.finish(f"SHELL_BarrierWrap_{side}", sec, coll)
+
+    # standard 2 ft system. Dimple board: vertical leg on the wall + 6" leg across the footing
     mb = MB()
-    v0, v1 = (s_lo, s_hi) if corners else (s_lo + DIMPLE_T, s_hi - DIMPLE_T)
-    mb.wbox(side, v0, v1, 0, DIMPLE_T, FOOT_TOP, top, M["dimple"], tile=0.15, voff=FOOT_TOP)
-    f0, f1 = (s_lo + DIMPLE_T, s_hi - DIMPLE_T) if corners else (s_lo + DIMPLE_FOOT, s_hi - DIMPLE_FOOT)
-    mb.wbox(side, f0, f1, DIMPLE_T, DIMPLE_FOOT, FOOT_TOP, FOOT_TOP + DIMPLE_T, M["dimple"], tile=0.15)
+    v0, v1 = ((s_lo + lo_off, s_hi - hi_off) if corners
+              else (s_lo + DIMPLE_T + lo_off, s_hi - DIMPLE_T - hi_off))
+    mb.wbox(side, v0, v1, off, off + DIMPLE_T, FOOT_TOP, top, M["dimple"], tile=0.15, voff=FOOT_TOP)
+    f0, f1 = ((s_lo + lo_off + DIMPLE_T, s_hi - hi_off - DIMPLE_T) if corners
+              else (s_lo + DIMPLE_FOOT, s_hi - DIMPLE_FOOT))
+    mb.wbox(side, f0, f1, off + DIMPLE_T, DIMPLE_FOOT, FOOT_TOP, FOOT_TOP + DIMPLE_T, M["dimple"], tile=0.15)
     mb.finish(f"PART_DimpleBoard_{side}", sec, coll)
 
-    # white wall panel (membrane / vapor barrier) with its top trim
+    # white 2 ft wall panel (membrane / vapor barrier) with its top trim
     mb = MB()
-    p0, p1 = (s_lo + SYS_FRONT, s_hi - SYS_FRONT) if corners else (s_lo + DIMPLE_T, s_hi - DIMPLE_T)
-    mb.wbox(side, p0, p1, DIMPLE_T, SYS_FRONT, FOOT_TOP + DIMPLE_T, top, M["panel"])
-    c0, c1 = (p0, p1) if corners else (s_lo + SYS_FRONT + 0.003, s_hi - SYS_FRONT - 0.003)
-    mb.wbox(side, c0, c1, 0, SYS_FRONT + 0.003, top, top + 0.008, M["panel"])
-    mb.finish(("PART_WallMembraneFull_" if full else "PART_WallMembrane_") + side, sec, coll)
+    p0, p1 = ((s_lo + lo_off + SYS_FRONT, s_hi - hi_off - SYS_FRONT) if corners
+              else (s_lo + DIMPLE_T + lo_off, s_hi - DIMPLE_T - hi_off))
+    mb.wbox(side, p0, p1, off + DIMPLE_T, off + SYS_FRONT, FOOT_TOP + DIMPLE_T, top, M["panel"])
+    c0, c1 = (p0, p1) if corners else (s_lo + SYS_FRONT + 0.003 + lo_off, s_hi - SYS_FRONT - 0.003 - hi_off)
+    mb.wbox(side, c0, c1, off, off + SYS_FRONT + 0.003, top, top + 0.008, M["panel"])
+    mb.finish(f"PART_WallMembrane_{side}", sec, coll)
 
     # weep holes (block walls only): one per block core in the bottom course, drilled through the
     # block's face shell (the wall itself gets matching holes in cut_holes)
@@ -816,12 +891,12 @@ def build_wall(side, M, root):
     # lid, the check valve and the battery.
     sump_end = SUMP_ENDS.get(side)
     mb = MB()
-    a, b = (s_lo + SYS_FRONT, s_hi - SYS_FRONT) if corners else (s_lo + TRENCH_W, s_hi - TRENCH_W)
+    a, b = (s_lo + SYS_FRONT + lo_off, s_hi - SYS_FRONT - hi_off) if corners else (s_lo + TRENCH_W, s_hi - TRENCH_W)
     if sump_end == "lo":
         a = s_lo + SUMP_SQ[1]
     if sump_end == "hi":
         b = s_hi - SUMP_SQ[1]
-    mb.wbox(side, a, b, SYS_FRONT, TRENCH_W, FOOT_TOP + DIMPLE_T, 0.0, M["patch"], tile=2.0)
+    mb.wbox(side, a, b, SYS_FRONT + off, TRENCH_W, FOOT_TOP + DIMPLE_T, 0.0, M["patch"], tile=2.0)
     mb.finish(f"FILL_Patch_{side}", sec, coll)
 
     # 2B stone around the pipe, above the gravel bed (pipe hole is cut later); labeled
@@ -1001,8 +1076,9 @@ def build_sump(M, root):
     # concrete over the footings beside the square (an L along both walls). It never moves: as part of
     # the N/W trench patches it used to fly through the lid, the check valve and the battery.
     mb = MB()
-    mb.box(XW + SYS_FRONT, XW + sq0, YN - sq1, YN - SYS_FRONT, FOOT_TOP + DIMPLE_T, 0.0, M["patch"], tile=2.0)
-    mb.box(XW + sq0, XW + sq1, YN - sq0, YN - SYS_FRONT, FOOT_TOP + DIMPLE_T, 0.0, M["patch"], tile=2.0)
+    xw, yn = XW + SYS_FRONT + sys_off("W"), YN - SYS_FRONT - sys_off("N")     # in front of the wall systems
+    mb.box(xw, XW + sq0, YN - sq1, yn, FOOT_TOP + DIMPLE_T, 0.0, M["patch"], tile=2.0)
+    mb.box(XW + sq0, XW + sq1, YN - sq0, yn, FOOT_TOP + DIMPLE_T, 0.0, M["patch"], tile=2.0)
     mb.finish("SHELL_SumpCorner_NW", sec, coll)
 
 

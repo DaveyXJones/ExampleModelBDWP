@@ -28,9 +28,13 @@ export const PART_INFO = {
     title: 'Wall Membrane / Vapor Barrier',
     text: 'Protects your basement from moisture on the walls.',
   },
-  WallMembraneFull: {
-    title: 'Full-Height Wall Membrane (Upgrade)',
-    text: 'The upgrade runs the wall membrane all the way up the wall, protecting the whole wall from moisture.',
+  VaporBarrier: {
+    title: 'Full-Wall Vapor Barrier (Upgrade)',
+    text: 'Heavy 11–14 mil white vapor barrier with anti-rip fibers woven in covers the whole wall and wraps 1–2 feet around each corner. Our standard 2 ft wall system goes on top of it.',
+  },
+  BarrierDimple: {
+    title: 'Dimple Board Behind the Barrier (Optional)',
+    text: 'On some jobs we add dimple board behind the vapor barrier, so moisture on the wall has an air gap to drain down into the system. It isn\'t always needed.',
   },
   WeepHoles: {
     title: 'Weep Holes',
@@ -94,8 +98,7 @@ export const PART_INFO = {
 
 export const EXPLODE = {
   WallMembrane:     { in: 0.30, up: 1.15, order: 0, label: { t: -0.32, h: 0.95 } },
-  WallMembraneFull: { in: 0.50, up: 1.25, order: 0, fade: 0.8, label: { t: -0.22, h: 0.9 } },  // 0.50 stops short of the sump's discharge pipe
-  DimpleBoard:      { in: 0.15, up: 0.58, order: 1, label: { t: -0.1, h: 0.85 } },
+  DimpleBoard:     { in: 0.15, up: 0.58, order: 1, label: { t: -0.1, h: 0.85 } },
   WeepHoles:        { in: 0.00, up: 0.00, order: 0, label: { t: 0.1, h: 0.5 } },
   PerimeterDrain:   { in: 0.45, up: 0.34, order: 2, label: { t: 0.3, h: 0.6 } },
   DrainStone:       { in: 0.85, up: 0.30, order: 1, label: { t: -0.24, h: 0.95 } },
@@ -104,6 +107,13 @@ export const EXPLODE = {
   // or it hid the pipe. Clear of the dehumidifier and the sump all the way out.
   GravelBed:        { in: 1.65, up: 0.30, order: 2, label: { t: 0.2, h: 0.5 } },
   Patch:            { in: 1.25, up: 0.15, order: 0 },
+
+  // full-wall upgrade (west wall): the dimple board behind the barrier stays on the wall; the barrier
+  // moves out last, rises enough to show the bottom of that dimple board, and turns see-through so the
+  // board shows through it too. Its wraps around the corners stay put. in 0.28 keeps it short of the
+  // first joist stubs and of the sump's discharge pipe.
+  BarrierDimple:    { in: 0.00, up: 0.00, order: 0, label: { t: -0.42, h: 0.1 } },
+  VaporBarrier:     { in: 0.28, up: 0.35, order: 3, fade: 0.75, label: { t: 0.05, h: 0.8 } },
 
   // sump area: 'in' points from the corner toward the middle of the room, 'along' toward the
   // north wall (negative = along the west wall). The basin, pumps and lid lift out as a stack in
@@ -136,9 +146,11 @@ export const SECTIONS = {
   },
   SEC_WallEast:  { title: 'Standard 2 ft wall system', inward: [-1, 0, 0], along: [0, 0, 1] },
   SEC_WallSouth: { title: 'Standard 2 ft wall system', inward: [0, 0, -1], along: [-1, 0, 0] },
+  // the standard 2 ft system on the upgrade wall lands farther out, in front of the barrier (0.28) but
+  // short of the sump's discharge pipe, which rises 0.58 m out from this wall
   SEC_WallWest:  {
-    title: 'Full-height wall system (upgrade)', inward: [1, 0, 0], along: [0, 0, -1],
-    explode: { DimpleBoard: { in: 0.38, up: 0.62, label: { t: 0.02, h: 0.3 } } },
+    title: 'Full-wall vapor barrier (upgrade)', inward: [1, 0, 0], along: [0, 0, -1],
+    explode: { DimpleBoard: { in: 0.36, up: 0.58 }, WallMembrane: { in: 0.45, up: 1.15 } },
   },
   SEC_SumpArea:  { title: 'Sump pump system with battery backup', inward: [0.7071, 0, 0.7071], along: [0.7071, 0, -0.7071] },
   SEC_WindowWell:   { title: 'Window well', inward: [0, 0, 1], along: [1, 0, 0] },  // 'in' = away from the house here
