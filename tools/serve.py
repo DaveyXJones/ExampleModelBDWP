@@ -1,6 +1,7 @@
 """Local preview server for the web viewer.
 
     python tools/serve.py          -> http://127.0.0.1:8765
+    python tools/serve.py 8770     -> another port (or set the PORT environment variable)
 
 Python's built-in server can send .js files as text/plain on Windows, which breaks
 the viewer's JavaScript modules, so this one sets the content types explicitly.
@@ -10,7 +11,7 @@ import http.server
 import os
 import sys
 
-PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8765
+PORT = int(sys.argv[1]) if len(sys.argv) > 1 else int(os.environ.get("PORT", 8765))
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web"))
 
 
