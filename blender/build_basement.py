@@ -811,9 +811,16 @@ def build_wall(side, M, root):
                     WEEP_CUTS[side].append(center)
         mb.finish(f"PART_WeepHoles_{side}", sec, coll)
 
-    # concrete patch over the trench
+    # concrete patch over the trench. At the sump end it stops at the sump square: the strips beside the
+    # square are SHELL_SumpCorner_NW (never moves), so the patch's explode doesn't drag them through the
+    # lid, the check valve and the battery.
+    sump_end = SUMP_ENDS.get(side)
     mb = MB()
     a, b = (s_lo + SYS_FRONT, s_hi - SYS_FRONT) if corners else (s_lo + TRENCH_W, s_hi - TRENCH_W)
+    if sump_end == "lo":
+        a = s_lo + SUMP_SQ[1]
+    if sump_end == "hi":
+        b = s_hi - SUMP_SQ[1]
     mb.wbox(side, a, b, SYS_FRONT, TRENCH_W, FOOT_TOP + DIMPLE_T, 0.0, M["patch"], tile=2.0)
     mb.finish(f"FILL_Patch_{side}", sec, coll)
 
@@ -831,7 +838,6 @@ def build_wall(side, M, root):
     # perimeter drain: slotted pipe, corner 90s (N/S own the corners), cleanout tee + capped riser
     mb = MB()
     lo, hi = s_lo + PIPE_OFF + BEND_R, s_hi - PIPE_OFF - BEND_R
-    sump_end = SUMP_ENDS.get(side)
     L45 = BEND45_R * math.tan(math.radians(22.5))
     if sump_end == "lo":
         lo = s_lo + SUMP_A + TAIL_TURN + L45
@@ -841,15 +847,19 @@ def build_wall(side, M, root):
            vtile=5 * IN, v0=lo)
     av, n = along_vec(side), inward(side)
     if sump_end:                                  # 45 into the side of the sump basin
+        # The 45 and the stub into the basin are their own piece that never moves: when the wall opens
+        # the pipe lifts out of the fitting, instead of the stub rising up through the sump lid.
+        tb = MB()
         s_t = s_lo + SUMP_A + TAIL_TURN if sump_end == "lo" else s_hi - SUMP_A - TAIL_TURN
         T = P(side, s_t, PIPE_OFF, PIPE_Z)
         d_in = -av if sump_end == "lo" else av
         target = Vector((SUMP_C.x, SUMP_C.y, PIPE_Z))
         d_out = (target - T).normalized()
-        start, end_pt = mb.bend(T, d_in, d_out, BEND45_R, FIT_R, M["pvc"])
-        mb.cyl(start, start - d_in * 0.04, FIT_R + 0.004, M["pvc"])
-        mb.cyl(end_pt, end_pt + d_out * 0.04, FIT_R + 0.004, M["pvc"])
-        mb.cyl(end_pt, target - d_out * (basin_radius_at(PIPE_Z) - 1 * IN), PIPE_R, M["pvc"])
+        start, end_pt = tb.bend(T, d_in, d_out, BEND45_R, FIT_R, M["pvc"])
+        tb.cyl(start, start - d_in * 0.04, FIT_R + 0.004, M["pvc"])
+        tb.cyl(end_pt, end_pt + d_out * 0.04, FIT_R + 0.004, M["pvc"])
+        tb.cyl(end_pt, target - d_out * (basin_radius_at(PIPE_Z) - 1 * IN), PIPE_R, M["pvc"])
+        tb.finish(f"SHELL_DrainTail_{side}", sec, coll)
     if corners:
         for end, sgn in (("lo", +1), ("hi", -1)):
             if end == sump_end:
@@ -988,6 +998,12 @@ def build_sump(M, root):
     mb = MB()
     mb.box(XW + sq0, XW + sq1, YN - sq1, YN - sq0, SUBBASE_BOTTOM + 0.04, FOOT_TOP, M["stone"], tile=0.3)
     mb.finish("FILL_SumpStone_NW", sec, coll)
+    # concrete over the footings beside the square (an L along both walls). It never moves: as part of
+    # the N/W trench patches it used to fly through the lid, the check valve and the battery.
+    mb = MB()
+    mb.box(XW + SYS_FRONT, XW + sq0, YN - sq1, YN - SYS_FRONT, FOOT_TOP + DIMPLE_T, 0.0, M["patch"], tile=2.0)
+    mb.box(XW + sq0, XW + sq1, YN - sq0, YN - SYS_FRONT, FOOT_TOP + DIMPLE_T, 0.0, M["patch"], tile=2.0)
+    mb.finish("SHELL_SumpCorner_NW", sec, coll)
 
 
 def label_marker(part, loc):
@@ -1197,7 +1213,7 @@ def cut_holes(root):
     # dig the sump square out of the slab, sub-base and the N/W trench fills
     pit = temp_object(root, "TMP_pit", lambda mb: mb.box(XW + sq0, XW + sq1, YN - sq1, YN - sq0,
                                                           SUBBASE_BOTTOM + 0.04, 0.05, None))
-    for name in ("SHELL_Slab", "SHELL_SubBase", "FILL_Patch_N", "FILL_Patch_W", "PART_DrainStone_N", "PART_DrainStone_W",
+    for name in ("SHELL_Slab", "SHELL_SubBase", "PART_DrainStone_N", "PART_DrainStone_W",
                  "PART_GravelBed_N", "PART_GravelBed_W"):
         subtract(objs[name], pit)
     remove_temp(pit)
@@ -1217,7 +1233,7 @@ def cut_holes(root):
     # and the basin's shape out of the sump stone
     def drains(mb):
         for o in objs.values():
-            if o.name.startswith("PART_PerimeterDrain_"):
+            if o.name.startswith(("PART_PerimeterDrain_", "SHELL_DrainTail_")):
                 mb.bm.from_mesh(o.data)
     chan = temp_object(root, "TMP_drains", drains)
     for o in objs.values():

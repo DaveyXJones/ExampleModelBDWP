@@ -11,6 +11,8 @@
 //              label = where the label sits: t = along the wall (-0.5 left end .. 0.5 right end,
 //                      seen from inside the room), h = height on the piece (0 bottom .. 1 top)
 // SECTIONS   - the hoverable sections, the text shown while one is open, and per-wall overrides.
+//              hides = objects in the way of that section's pieces: they fade out before the pieces
+//                      move and come back after the section has closed (names as in the model).
 
 export const PART_INFO = {
   // ---- walls (in the model now) ----
@@ -92,7 +94,7 @@ export const PART_INFO = {
 
 export const EXPLODE = {
   WallMembrane:     { in: 0.30, up: 1.15, order: 0, label: { t: -0.32, h: 0.95 } },
-  WallMembraneFull: { in: 0.75, up: 1.25, order: 0, fade: 0.8, label: { t: -0.22, h: 0.9 } },
+  WallMembraneFull: { in: 0.50, up: 1.25, order: 0, fade: 0.8, label: { t: -0.22, h: 0.9 } },  // 0.50 stops short of the sump's discharge pipe
   DimpleBoard:      { in: 0.15, up: 0.58, order: 1, label: { t: -0.1, h: 0.85 } },
   WeepHoles:        { in: 0.00, up: 0.00, order: 0, label: { t: 0.1, h: 0.5 } },
   PerimeterDrain:   { in: 0.45, up: 0.34, order: 2, label: { t: 0.3, h: 0.6 } },
@@ -126,7 +128,12 @@ export const EXPLODE = {
 
 // inward/along are three.js directions: +x east, -z north, +y up.
 export const SECTIONS = {
-  SEC_WallNorth: { title: 'Standard 2 ft wall system', inward: [0, 0, 1], along: [1, 0, 0] },
+  // the dehumidifier and the battery box stand right in front of the north trench, so its pieces
+  // would pass through them on the way out
+  SEC_WallNorth: {
+    title: 'Standard 2 ft wall system', inward: [0, 0, 1], along: [1, 0, 0],
+    hides: ['PART_Dehumidifier_N', 'PART_BackupBattery_NW'],
+  },
   SEC_WallEast:  { title: 'Standard 2 ft wall system', inward: [-1, 0, 0], along: [0, 0, 1] },
   SEC_WallSouth: { title: 'Standard 2 ft wall system', inward: [0, 0, -1], along: [-1, 0, 0] },
   SEC_WallWest:  {
@@ -146,6 +153,7 @@ export const TIMING = {
   stagger: 0.12,       // delay between 'order' groups
   collapseSpeed: 1.5,  // closing is this much faster than opening
   leaveDelay: 380,     // ms the cursor can be off a section before it closes
+  hideFade: 0.15,      // seconds a section's 'hides' take to fade out before its pieces move
 };
 
 export const VIEW = {

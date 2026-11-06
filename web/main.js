@@ -145,6 +145,53 @@ function initModel(root) {
   for (const node of secNodes) sections.push(makeSection(node));
   // sections that sit on a wall turn see-through together with it
   for (const s of sections) if (s.cfg.fadeWith) s.fadeWith = sections.find((o) => o.name === s.cfg.fadeWith);
+  // things standing in the way of a section's pieces fade out while it is open (SECTIONS[...].hides);
+  // the section waits 'lead' (phase units) for them to go before anything moves
+  for (const s of sections) {
+    s.hides = (s.cfg.hides || []).map((name) => hideTarget(root, name)).filter(Boolean);
+    s.lead = s.hides.length ? TIMING.hideFade / TIMING.duration : 0;
+  }
+}
+
+const hideTargets = new Map();
+function hideTarget(root, name) {
+  if (hideTargets.has(name)) return hideTargets.get(name);
+  const node = root.getObjectByName(name);
+  if (!node) {
+    console.warn(`parts.js hides: no object named ${name}`);
+    return null;
+  }
+  const meshes = [];
+  node.traverse((m) => m.isMesh && meshes.push(m));
+  const mats = [];
+  for (const m of meshes) {
+    // fading needs materials of its own (sections with 'inward' already gave their pieces copies)
+    if (asArray(m.material).some((mm) => mm.userData.baseOpacity === undefined)) {
+      m.material = Array.isArray(m.material) ? m.material.map(cloneMat) : cloneMat(m.material);
+    }
+    mats.push(...asArray(m.material));
+  }
+  const t = { meshes, mats, h: 0, goal: 0 };
+  hideTargets.set(name, t);
+  return t;
+}
+
+function updateHides() {
+  for (const t of hideTargets.values()) t.goal = 0;
+  for (const s of sections) {
+    if (!s.lead) continue;
+    const h = clamp01(s.phase / s.lead);
+    for (const t of s.hides) t.goal = Math.max(t.goal, h);
+  }
+  for (const t of hideTargets.values()) {
+    if (t.goal === t.h) continue;
+    t.h = t.goal;
+    setOpacity(t.mats, 1 - t.h);
+    for (const m of t.meshes) {
+      m.visible = t.h < 0.999;
+      m.userData.hidden = t.h > 0.5;   // once mostly gone, the cursor passes through it
+    }
+  }
 }
 
 function cloneMat(m) {
@@ -357,12 +404,13 @@ function updateSections(dt) {
   const sf = TIMING.stagger / TIMING.duration;
   for (const s of sections) {
     if (!s.explodable) continue;
-    const max = 1 + s.maxOrder * sf;
+    const lead = s.lead || 0;           // time for its 'hides' to fade out first
+    const max = lead + 1 + s.maxOrder * sf;
     const goal = s.target ? max : 0;
     if (s.phase !== goal) {
       s.phase = s.target ? Math.min(goal, s.phase + step) : Math.max(0, s.phase - step * TIMING.collapseSpeed);
       for (const p of s.parts) {
-        const k = ease(clamp01(s.phase - p.order * sf));
+        const k = ease(clamp01(s.phase - lead - p.order * sf));
         p.node.position.copy(p.base).addScaledVector(p.offset, k);
         if (p.fade !== undefined) {
           p.alpha = 1 + (p.fade - 1) * k;
@@ -410,7 +458,7 @@ function pickSection(clientX, clientY, sticky) {
   raycaster.setFromCamera(ndc, camera);
   let first = null, firstDist = Infinity;   // first solid thing under the cursor
   for (const hit of raycaster.intersectObjects(pickables, false)) {
-    if (hit.object.userData.faded) continue;
+    if (hit.object.userData.faded || hit.object.userData.hidden) continue;
     first = hit.object.userData.section || null;
     firstDist = hit.distance;
     break;
@@ -488,7 +536,7 @@ function focusDepthAt(clientX, clientY) {
   const r = renderer.domElement.getBoundingClientRect();
   ndc.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
-  const hit = raycaster.intersectObjects(pickables, false).find((h) => h.object.visible && !h.object.userData.faded);
+  const hit = raycaster.intersectObjects(pickables, false).find((h) => h.object.visible && !h.object.userData.faded && !h.object.userData.hidden);
   if (!hit) return;
   camera.getWorldDirection(viewDir);
   const depth = hit.point.clone().sub(camera.position).dot(viewDir);
@@ -577,6 +625,7 @@ function frame() {
     hoverPick();
   }
   updateSections(dt);
+  updateHides();
   updateWallFades(dt);
   renderer.render(scene, camera);
   labelRenderer.render(scene, camera);
