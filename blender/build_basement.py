@@ -57,7 +57,8 @@ TRENCH_D = 10 * IN                          # measured from the top of the floor
 PIPE_R = 4.2 * IN / 2                       # 4" ribbed slotted PVC, ~4.2" OD
 FIT_R = PIPE_R + 0.006                      # fittings are a bit fatter
 PIPE_OFF = (FOOT_PROJ + TRENCH_W) / 2       # pipe sits beside the footing
-PIPE_Z = -TRENCH_D + 1 * IN + PIPE_R        # on a 1" stone bed
+BED_T = 1 * IN                              # 1" bed of 1B pea gravel on the trench bottom
+PIPE_Z = -TRENCH_D + BED_T + PIPE_R         # the pipe rests on that bed
 BEND_R = 0.10                               # 90 elbow centerline radius
 DIMPLE_T = 0.008
 PANEL_T = 0.004
@@ -511,17 +512,13 @@ def tex_concrete(rng, base, H=1024):
     return np.stack([v, v * 0.99, v * 0.97], -1)
 
 
-def tex_gravel(rng, H=512, n=320):
-    pts = rng.random((n, 2)) * H
-    base = 0.24 + 0.34 * rng.random(n)
-    cols = np.stack([base * (0.95 + 0.12 * rng.random(n)),
-                     base * (0.93 + 0.08 * rng.random(n)),
-                     base * (0.86 + 0.12 * rng.random(n))], -1)
+def pebble_cells(pts, H):
+    """Tileable Voronoi cells: distance to the nearest and second-nearest pebble centre, and its index."""
     yy, xx = np.mgrid[0:H, 0:H].astype(np.float32)
     F1 = np.full((H, H), 1e9, np.float32)
     F2 = np.full((H, H), 1e9, np.float32)
     idx = np.zeros((H, H), np.int32)
-    for k in range(n):
+    for k in range(len(pts)):
         dx = np.abs(xx - pts[k, 0]); dx = np.minimum(dx, H - dx)
         dy = np.abs(yy - pts[k, 1]); dy = np.minimum(dy, H - dy)
         d = np.sqrt(dx * dx + dy * dy)
@@ -529,11 +526,37 @@ def tex_gravel(rng, H=512, n=320):
         F2 = np.where(closer, F1, np.minimum(F2, d))
         idx = np.where(closer, k, idx)
         F1 = np.where(closer, d, F1)
+    return F1, F2, idx
+
+
+def tex_gravel(rng, H=512, n=320):
+    pts = rng.random((n, 2)) * H
+    base = 0.24 + 0.34 * rng.random(n)
+    cols = np.stack([base * (0.95 + 0.12 * rng.random(n)),
+                     base * (0.93 + 0.08 * rng.random(n)),
+                     base * (0.86 + 0.12 * rng.random(n))], -1)
+    F1, F2, idx = pebble_cells(pts, H)
     gap = F2 - F1
     rel = F1 / (F1 + gap * 0.5 + 1e-3)                 # 0 at pebble centre, 1 at its edge
     shade = (1.0 - 0.55 * rel ** 2) * (0.2 + 0.8 * np.clip(gap / 3.5, 0, 1))
     rgb = cols[idx] * shade[..., None]
     rgb += 0.025 * noise(rng, (H, H), 0)[..., None]
+    return rgb
+
+
+def tex_pea_gravel(rng, H=512, n=440):
+    """1B pea gravel: smaller, rounder and warmer than the washed stone, in mixed tans, browns and greys."""
+    pts = rng.random((n, 2)) * H
+    palette = np.array([(0.64, 0.56, 0.45), (0.56, 0.54, 0.50), (0.48, 0.40, 0.31),
+                        (0.72, 0.68, 0.60), (0.42, 0.39, 0.35)], np.float32)
+    cols = palette[rng.integers(0, len(palette), n)] * (0.85 + 0.25 * rng.random((n, 1)))
+    F1, F2, idx = pebble_cells(pts, H)
+    gap = F2 - F1
+    rel = np.clip(F1 / (F1 + gap * 0.5 + 1e-3), 0, 1)  # 0 at pebble centre, 1 at its edge
+    dome = np.sqrt(1.0 - rel ** 2)                       # rounded pebbles: bright middle, soft falloff
+    shade = (0.3 + 0.7 * dome) * (0.15 + 0.85 * np.clip(gap / 3.0, 0, 1))
+    rgb = cols[idx] * shade[..., None]
+    rgb += 0.02 * noise(rng, (H, H), 0)[..., None]
     return rgb
 
 
@@ -584,6 +607,7 @@ def make_textures():
     pc, pn = tex_pipe(rng)
     T["pipe"] = save_image("drainpipe_basecolor", pc, "JPEG")
     T["pipe_n"] = save_image("drainpipe_normal", pn, "PNG", non_color=True)
+    T["pea"] = save_image("peagravel_basecolor", tex_pea_gravel(rng), "JPEG")   # last, so the others stay as they were
     return T
 
 
@@ -633,6 +657,7 @@ def make_materials(T):
         "concrete": make_mat("MAT_Concrete", (0.66, 0.66, 0.64), 0.88, tex=T["slab"]),
         "patch": make_mat("MAT_ConcretePatch", (0.52, 0.52, 0.5), 0.82, tex=T["patch"]),
         "stone": make_mat("MAT_Stone", (0.5, 0.48, 0.45), 0.9, tex=T["gravel"]),
+        "pea": make_mat("MAT_PeaGravel", (0.6, 0.55, 0.48), 0.85, tex=T["pea"]),
         "subbase": make_mat("MAT_SubBase", (0.36, 0.31, 0.26), 1.0),
         "pvc": make_mat("MAT_PVC", (0.93, 0.93, 0.92), 0.35),
         "pipe": make_mat("MAT_DrainPipe", (0.92, 0.92, 0.91), 0.45, tex=T["pipe"], normal=T["pipe_n"]),
@@ -792,11 +817,16 @@ def build_wall(side, M, root):
     mb.wbox(side, a, b, SYS_FRONT, TRENCH_W, FOOT_TOP + DIMPLE_T, 0.0, M["patch"], tile=2.0)
     mb.finish(f"FILL_Patch_{side}", sec, coll)
 
-    # washed stone around the pipe (pipe hole is cut later)
+    # washed stone around the pipe, above the gravel bed (pipe hole is cut later)
     mb = MB()
     a, b = (s_lo + FOOT_PROJ, s_hi - FOOT_PROJ) if corners else (s_lo + TRENCH_W, s_hi - TRENCH_W)
-    mb.wbox(side, a, b, FOOT_PROJ, TRENCH_W, -TRENCH_D, FOOT_TOP + DIMPLE_T, M["stone"], tile=0.3)
+    mb.wbox(side, a, b, FOOT_PROJ, TRENCH_W, -TRENCH_D + BED_T, FOOT_TOP + DIMPLE_T, M["stone"], tile=0.3)
     mb.finish(f"FILL_Stone_{side}", sec, coll)
+
+    # 1" bed of 1B pea gravel across the trench bottom; the pipe rests on it
+    mb = MB()
+    mb.wbox(side, a, b, FOOT_PROJ, TRENCH_W, -TRENCH_D, -TRENCH_D + BED_T, M["pea"], tile=0.2)
+    mb.finish(f"FILL_GravelBed_{side}", sec, coll)
 
     # perimeter drain: slotted pipe, corner 90s (N/S own the corners), cleanout tee + capped riser
     mb = MB()
@@ -1167,7 +1197,8 @@ def cut_holes(root):
     # dig the sump square out of the slab, sub-base and the N/W trench fills
     pit = temp_object(root, "TMP_pit", lambda mb: mb.box(XW + sq0, XW + sq1, YN - sq1, YN - sq0,
                                                           SUBBASE_BOTTOM + 0.04, 0.05, None))
-    for name in ("SHELL_Slab", "SHELL_SubBase", "FILL_Patch_N", "FILL_Patch_W", "FILL_Stone_N", "FILL_Stone_W"):
+    for name in ("SHELL_Slab", "SHELL_SubBase", "FILL_Patch_N", "FILL_Patch_W", "FILL_Stone_N", "FILL_Stone_W",
+                 "FILL_GravelBed_N", "FILL_GravelBed_W"):
         subtract(objs[name], pit)
     remove_temp(pit)
     # drill the weep holes into the block walls
@@ -1182,14 +1213,15 @@ def cut_holes(root):
                                                           BASIN_FLANGE, None, segs=40))
     subtract(objs["FILL_SumpPatch_NW"], lid)
     remove_temp(lid)
-    # pipe-shaped channels through all the stone, and the basin's shape out of the sump stone
+    # pipe-shaped channels through all the stone (the fatter fittings dip into the gravel bed too),
+    # and the basin's shape out of the sump stone
     def drains(mb):
         for o in objs.values():
             if o.name.startswith("PART_PerimeterDrain_"):
                 mb.bm.from_mesh(o.data)
     chan = temp_object(root, "TMP_drains", drains)
     for o in objs.values():
-        if o.name.startswith("FILL_Stone_") or o.name == "FILL_SumpStone_NW":
+        if o.name.startswith(("FILL_Stone_", "FILL_GravelBed_")) or o.name == "FILL_SumpStone_NW":
             subtract(o, chan)
     remove_temp(chan)
     basin = temp_object(root, "TMP_basin", lambda mb: mb.lathe(SUMP_C, [

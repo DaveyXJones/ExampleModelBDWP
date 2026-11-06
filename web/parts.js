@@ -89,6 +89,8 @@ export const EXPLODE = {
   WeepHoles:        { in: 0.00, up: 0.00, order: 0, label: { t: 0.1, h: 0.5 } },
   PerimeterDrain:   { in: 0.45, up: 0.34, order: 2, label: { t: 0.3, h: 0.6 } },
   Stone:            { in: 0.85, up: 0.30, order: 1 },
+  // the 1" pea gravel bed rises with the pipe and stops just under it (in 0.47 keeps it clear of the dehumidifier)
+  GravelBed:        { in: 0.47, up: 0.30, order: 2 },
   Patch:            { in: 1.25, up: 0.15, order: 0 },
 
   // sump area: 'in' points from the corner toward the middle of the room, 'along' toward the
