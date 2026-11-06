@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>BDRY Basement System 3D</title>
+  <meta name="description" content="Interactive 3D model of a basement with the BDRY waterproofing system installed.">
+  <link rel="stylesheet" href="./style.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <main id="viewer" class="viewer" aria-label="Interactive 3D model of a basement with the BDRY waterproofing system">
+    <header class="topbar">
+      <img class="logo" src="./assets/bdry-logo.png" alt="BDRY Basement Systems Northeast" width="600" height="242">
+      <div class="headline">
+        <h1>See how our system protects your basement</h1>
+        <p id="hint" class="hint"></p>
+      </div>
+    </header>
+    <div id="section-chip" class="section-chip" hidden></div>
+    <button id="reset-view" class="reset" type="button">Reset view</button>
+    <div id="loading" class="loading" role="status">
+      <p>Loading the 3D basement…</p>
+      <div class="bar"><span></span></div>
+    </div>
+  </main>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

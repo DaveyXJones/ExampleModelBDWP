@@ -1,0 +1,11 @@
+# Text files: keep Unix line endings (how the files are written), so Git never
+# reports a whole file as changed just because its line endings flipped.
+* text=auto eol=lf
+
+# Binary files: never touch them.
+*.glb    binary
+*.blend  binary
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.pdf    binary
