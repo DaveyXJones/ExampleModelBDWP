@@ -34,6 +34,14 @@ export const PART_INFO = {
     title: 'Weep Holes',
     text: 'Holes drilled into the bottom row of block let water trapped inside the hollow block cores drain into the system.',
   },
+  GravelBed: {
+    title: '1B Pea Gravel Bed',
+    text: 'A 1-inch layer of small 1B pea gravel lines the bottom of the trench. The drain pipe rests on it, so the pipe has a firm, even base and water in the gravel flows freely into the pipe\'s slots.',
+  },
+  DrainStone: {
+    title: '2B Drainage Stone',
+    text: 'Larger 2B crushed stone fills the trench around the drain pipe, up to the new concrete. The gaps between the stones let water move freely to the pipe and hold the pipe in place.',
+  },
 
   // ---- sump area (in the model now) ----
   SumpPit: {
@@ -88,9 +96,11 @@ export const EXPLODE = {
   DimpleBoard:      { in: 0.15, up: 0.58, order: 1, label: { t: -0.1, h: 0.85 } },
   WeepHoles:        { in: 0.00, up: 0.00, order: 0, label: { t: 0.1, h: 0.5 } },
   PerimeterDrain:   { in: 0.45, up: 0.34, order: 2, label: { t: 0.3, h: 0.6 } },
-  Stone:            { in: 0.85, up: 0.30, order: 1 },
-  // the 1" pea gravel bed rises with the pipe and stops just under it (in 0.47 keeps it clear of the dehumidifier)
-  GravelBed:        { in: 0.47, up: 0.30, order: 2 },
+  DrainStone:       { in: 0.85, up: 0.30, order: 1, label: { t: -0.24, h: 0.95 } },
+  // the 1" pea gravel bed slides out from under the pipe and lands farthest out, past the patch, continuing
+  // the 0.40 m spacing (pipe 0.45, stone 0.85, patch 1.25, bed 1.65). Anywhere closer, a taller piece hid it
+  // or it hid the pipe. Clear of the dehumidifier and the sump all the way out.
+  GravelBed:        { in: 1.65, up: 0.30, order: 2, label: { t: 0.2, h: 0.5 } },
   Patch:            { in: 1.25, up: 0.15, order: 0 },
 
   // sump area: 'in' points from the corner toward the middle of the room, 'along' toward the

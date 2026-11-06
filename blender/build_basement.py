@@ -17,7 +17,7 @@ Names (the web viewer depends on them):
   SEC_<Name>                hover/tap sections (parent empties)
   PART_<Type>_<N|E|S|W>     labeled system parts; the web looks labels up by <Type>
   SHELL_*                   house structure (not labeled, never moves)
-  FILL_*                    stone and concrete patch in the trench (not labeled)
+  FILL_*                    concrete patch, sump and window-well stone (not labeled)
 """
 import bpy, bmesh, math, os, shutil
 import numpy as np
@@ -817,16 +817,16 @@ def build_wall(side, M, root):
     mb.wbox(side, a, b, SYS_FRONT, TRENCH_W, FOOT_TOP + DIMPLE_T, 0.0, M["patch"], tile=2.0)
     mb.finish(f"FILL_Patch_{side}", sec, coll)
 
-    # washed stone around the pipe, above the gravel bed (pipe hole is cut later)
+    # 2B stone around the pipe, above the gravel bed (pipe hole is cut later); labeled
     mb = MB()
     a, b = (s_lo + FOOT_PROJ, s_hi - FOOT_PROJ) if corners else (s_lo + TRENCH_W, s_hi - TRENCH_W)
     mb.wbox(side, a, b, FOOT_PROJ, TRENCH_W, -TRENCH_D + BED_T, FOOT_TOP + DIMPLE_T, M["stone"], tile=0.3)
-    mb.finish(f"FILL_Stone_{side}", sec, coll)
+    mb.finish(f"PART_DrainStone_{side}", sec, coll)
 
-    # 1" bed of 1B pea gravel across the trench bottom; the pipe rests on it
+    # 1" bed of 1B pea gravel across the trench bottom; the pipe rests on it; labeled
     mb = MB()
     mb.wbox(side, a, b, FOOT_PROJ, TRENCH_W, -TRENCH_D, -TRENCH_D + BED_T, M["pea"], tile=0.2)
-    mb.finish(f"FILL_GravelBed_{side}", sec, coll)
+    mb.finish(f"PART_GravelBed_{side}", sec, coll)
 
     # perimeter drain: slotted pipe, corner 90s (N/S own the corners), cleanout tee + capped riser
     mb = MB()
@@ -1197,8 +1197,8 @@ def cut_holes(root):
     # dig the sump square out of the slab, sub-base and the N/W trench fills
     pit = temp_object(root, "TMP_pit", lambda mb: mb.box(XW + sq0, XW + sq1, YN - sq1, YN - sq0,
                                                           SUBBASE_BOTTOM + 0.04, 0.05, None))
-    for name in ("SHELL_Slab", "SHELL_SubBase", "FILL_Patch_N", "FILL_Patch_W", "FILL_Stone_N", "FILL_Stone_W",
-                 "FILL_GravelBed_N", "FILL_GravelBed_W"):
+    for name in ("SHELL_Slab", "SHELL_SubBase", "FILL_Patch_N", "FILL_Patch_W", "PART_DrainStone_N", "PART_DrainStone_W",
+                 "PART_GravelBed_N", "PART_GravelBed_W"):
         subtract(objs[name], pit)
     remove_temp(pit)
     # drill the weep holes into the block walls
@@ -1221,7 +1221,7 @@ def cut_holes(root):
                 mb.bm.from_mesh(o.data)
     chan = temp_object(root, "TMP_drains", drains)
     for o in objs.values():
-        if o.name.startswith(("FILL_Stone_", "FILL_GravelBed_")) or o.name == "FILL_SumpStone_NW":
+        if o.name.startswith(("PART_DrainStone_", "PART_GravelBed_")) or o.name == "FILL_SumpStone_NW":
             subtract(o, chan)
     remove_temp(chan)
     basin = temp_object(root, "TMP_basin", lambda mb: mb.lathe(SUMP_C, [
