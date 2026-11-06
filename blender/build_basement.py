@@ -132,6 +132,27 @@ CRACK_TO = (0.36, 0.62)                     # (x, z); ends above the 2 ft wall p
 DEHU = (XW + 1.55, XW + 2.10, YN - 0.60, YN - 0.32)   # x0, x1, y front, y back (partly on the trench patch)
 DEHU_H = 0.53
 
+# ---- water heater with a drain grate around it (east wall, across from the full-wall upgrade) ----
+# The heater stands on a square of the old slab (the island). The trench goes around the island in a U, the
+# 4" pipe jogs out along it, and a channel drain sits on top; its legs run back to the wall, where the wall
+# system stops on either side of the heater. 1.5" PVC male adapters join the channel to the pipe below.
+WH_SIDE = "E"
+WH_S = 1.0                                  # tank centre along the east wall (north of the middle)
+WH_R, WH_H = 10 * IN, 58 * IN               # 20" x 58" tank (about 50 gallons)
+WH_D = 3 * IN + WH_R                        # tank centre from the wall face (it stands 3" off the wall)
+ISLE_M = 4 * IN                             # old slab left around the tank
+ISLE = (WH_S - WH_R - ISLE_M, WH_S + WH_R + ISLE_M, WH_D + WH_R + ISLE_M)   # s0, s1, depth from the wall
+U_W = 12 * IN                               # width of the U trench
+U_OUT = ISLE[2] + U_W                       # how far the U reaches into the room
+U_S, U_N = ISLE[0] - U_W / 2, ISLE[1] + U_W / 2   # centre lines of the U's two legs (along the wall)
+U_F = ISLE[2] + U_W / 2                     # and of its front run (from the wall)
+SYS_PAD = 0.005                             # the wall system stops this short of the U trench
+GRATE_W = 5 * IN                            # channel drain: 5" wide, 4" deep, top flush with the floor
+GRATE_LIP = 0.4 * IN                        # channel rim on each side of the grate
+ADAPTERS = ((U_S, (PIPE_OFF + U_F) / 2), (WH_S, U_F), (U_N, (PIPE_OFF + U_F) / 2))   # (s, d), one per run
+ADAPT_R = 1.1 * IN                          # 1.5" PVC male adapter, socket end
+HUB_Z = FOOT_TOP - 0.4 * IN                 # bottom of the channel's outlet hubs (the adapters thread in)
+
 
 def P(side, s, d, z):
     """Point from wall coords: s = along the wall, d = distance into the room from the wall face."""
@@ -167,6 +188,27 @@ def end_wall(side, end):
     if SIDES[side]["along"] == "x":
         return "W" if end == "lo" else "E"
     return "S" if end == "lo" else "N"
+
+
+def wall_gap(side):
+    """The stretch of a wall the water heater's U trench takes: the wall's own trench and system stop there."""
+    return (ISLE[0] - U_W, ISLE[1] + U_W) if side == WH_SIDE else None
+
+
+def around(a, b, gap, pad=0.0):
+    """The parts of [a, b] outside the gap (widened by pad)."""
+    if gap is None:
+        return [(a, b)]
+    return [(x0, x1) for x0, x1 in ((a, min(b, gap[0] - pad)), (max(a, gap[1] + pad), b)) if x1 - x0 > 1e-4]
+
+
+def slab_outline():
+    """Main slab outline inside the trenches, notched on the east side for the water heater's U trench."""
+    assert WH_SIDE == "E"
+    x0, x1, y0, y1 = XW + TRENCH_W, XE - TRENCH_W, YS + TRENCH_W, YN - TRENCH_W
+    g0, g1 = wall_gap(WH_SIDE)
+    xn = XE - U_OUT
+    return [(x0, y0), (x1, y0), (x1, g0), (xn, g0), (xn, g1), (x1, g1), (x1, y1), (x0, y1)]
 
 
 def lin(c):
@@ -427,6 +469,42 @@ class MB:
             if e:
                 e.smooth = False
 
+    def quad(self, corners, uvs, mat, facing=(0, 0, 1)):
+        """One flat face with its own UVs, turned to face `facing`."""
+        vs = [self.bm.verts.new(c) for c in corners]
+        uv_of = dict(zip(vs, uvs))
+        f = self.bm.faces.new(vs)
+        f.material_index = self.mi(mat)
+        f.normal_update()
+        if f.normal.dot(Vector(facing)) < 0:
+            f.normal_flip()
+        for loop in f.loops:
+            loop[self.uv].uv = uv_of[loop.vert]
+
+    def pipe_hole(self, top, axis, R, r, mat, segs=20):
+        """Dark hole drilled into the top of a horizontal pipe: a fan hugging the pipe just above its surface.
+        `top` is the top of the pipe at the hole's centre, `axis` the pipe's direction."""
+        axis = Vector(axis).normalized()
+        side = axis.cross(Vector((0, 0, 1))).normalized()
+        centre = Vector(top) - Vector((0, 0, R))
+        Rs = R + 0.0006
+        tip = self.bm.verts.new(centre + Vector((0, 0, Rs)))
+        ring = []
+        for i in range(segs):
+            t = 2 * math.pi * i / segs
+            th = math.asin(max(-1.0, min(1.0, r * math.sin(t) / Rs)))
+            ring.append(self.bm.verts.new(centre + axis * (r * math.cos(t)) + side * (Rs * math.sin(th))
+                                          + Vector((0, 0, Rs * math.cos(th)))))
+        idx = self.mi(mat)
+        for i in range(segs):
+            f = self.bm.faces.new((tip, ring[i], ring[(i + 1) % segs]))
+            f.material_index = idx
+            f.normal_update()
+            if f.normal.z < 0:
+                f.normal_flip()
+            for loop in f.loops:
+                loop[self.uv].uv = (0.5, 0.5)
+
     def disc(self, center, n, r, mat, segs=16):
         n = Vector(n).normalized()
         ref = Vector((0, 0, 1)) if abs(n.z) < 0.9 else Vector((1, 0, 0))
@@ -638,6 +716,24 @@ def tex_pipe(rng, H=512, ribs=12):
     return np.stack([c, c, c * 0.99], -1), nrm
 
 
+def tex_grate(W=256, H=512):
+    """Channel-drain grate from above. u = along the channel (one tile = 1"), v = across the whole grate.
+    Short slots across the grate in three staggered lanes, dark grey plastic bars between them."""
+    yy, xx = np.mgrid[0:H, 0:W].astype(np.float32) + 0.5
+    lane_h = H / 3
+    lane = np.floor(yy / lane_h)
+    ly = yy - lane * lane_h                                # across, inside the lane
+    period = W / 2                                         # two slots per inch
+    lx = (xx + (lane % 2) * period / 2) % period           # along, inside the period (lanes staggered)
+    bar_u, bar_v = 0.42 * period, 0.16 * lane_h
+    slot = (np.abs(lx - period / 2) < (period - bar_u) / 2) & (np.abs(ly - lane_h / 2) < lane_h / 2 - bar_v)
+    edge = (np.abs(lx - period / 2) < (period - bar_u) / 2 + 3) & (np.abs(ly - lane_h / 2) < lane_h / 2 - bar_v + 3)
+    v = np.full((H, W), 0.30, np.float32)
+    v = np.where(edge, 0.22, v)
+    v = np.where(slot, 0.035, v)
+    return np.stack([v, v * 1.02, v * 1.06], -1)
+
+
 def make_textures():
     rng = np.random.default_rng(7)
     T = {}
@@ -656,6 +752,7 @@ def make_textures():
     bc, bn = tex_vapor_barrier(rng)                                              # stay as they were
     T["barrier"] = save_image("vaporbarrier_basecolor", bc, "JPEG")
     T["barrier_n"] = save_image("vaporbarrier_normal", bn, "PNG", non_color=True)
+    T["grate"] = save_image("grate_basecolor", tex_grate(), "JPEG")
     return T
 
 
@@ -733,6 +830,12 @@ def make_materials(T):
         "dehu": make_mat("MAT_DehuBody", (0.9, 0.9, 0.9), 0.45),
         "grille": make_mat("MAT_Grille", (0.14, 0.14, 0.15), 0.6),
         "hose": make_mat("MAT_Hose", (0.2, 0.2, 0.22), 0.5),
+        "channel": make_mat("MAT_ChannelDrain", (0.24, 0.25, 0.27), 0.6),
+        "grate": make_mat("MAT_Grate", (0.3, 0.31, 0.33), 0.55, tex=T["grate"]),
+        "heater": make_mat("MAT_WaterHeater", (0.84, 0.85, 0.86), 0.35, metal=0.15),
+        "copper": make_mat("MAT_Copper", (0.78, 0.47, 0.3), 0.35, metal=0.9),
+        "brass": make_mat("MAT_Brass", (0.8, 0.66, 0.36), 0.35, metal=0.85),
+        "handle": make_mat("MAT_ValveHandle", (0.15, 0.3, 0.7), 0.5),
     }
 
 
@@ -829,6 +932,8 @@ def build_wall(side, M, root):
     off = sys_off(side)                                   # this wall's 2 ft system sits this far off the face
     lo_off, hi_off = sys_off(end_wall(side, "lo")), sys_off(end_wall(side, "hi"))
     top = FOOT_TOP + SYS_H
+    gap = wall_gap(side)                                  # the water heater's U trench (east wall): the trench,
+                                                          # pipe and wall system stop on either side of it
 
     if side == FULL_HEIGHT_SIDE:
         # full-wall upgrade: dimple board behind the barrier (not on every job), full height
@@ -860,19 +965,23 @@ def build_wall(side, M, root):
     mb = MB()
     v0, v1 = ((s_lo + lo_off, s_hi - hi_off) if corners
               else (s_lo + DIMPLE_T + lo_off, s_hi - DIMPLE_T - hi_off))
-    mb.wbox(side, v0, v1, off, off + DIMPLE_T, FOOT_TOP, top, M["dimple"], tile=0.15, voff=FOOT_TOP)
+    for a, b in around(v0, v1, gap, SYS_PAD):
+        mb.wbox(side, a, b, off, off + DIMPLE_T, FOOT_TOP, top, M["dimple"], tile=0.15, voff=FOOT_TOP)
     f0, f1 = ((s_lo + lo_off + DIMPLE_T, s_hi - hi_off - DIMPLE_T) if corners
               else (s_lo + DIMPLE_FOOT, s_hi - DIMPLE_FOOT))
-    mb.wbox(side, f0, f1, off + DIMPLE_T, DIMPLE_FOOT, FOOT_TOP, FOOT_TOP + DIMPLE_T, M["dimple"], tile=0.15)
+    for a, b in around(f0, f1, gap, SYS_PAD):
+        mb.wbox(side, a, b, off + DIMPLE_T, DIMPLE_FOOT, FOOT_TOP, FOOT_TOP + DIMPLE_T, M["dimple"], tile=0.15)
     mb.finish(f"PART_DimpleBoard_{side}", sec, coll)
 
     # white 2 ft wall panel (membrane / vapor barrier) with its top trim
     mb = MB()
     p0, p1 = ((s_lo + lo_off + SYS_FRONT, s_hi - hi_off - SYS_FRONT) if corners
               else (s_lo + DIMPLE_T + lo_off, s_hi - DIMPLE_T - hi_off))
-    mb.wbox(side, p0, p1, off + DIMPLE_T, off + SYS_FRONT, FOOT_TOP + DIMPLE_T, top, M["panel"])
+    for a, b in around(p0, p1, gap, SYS_PAD):
+        mb.wbox(side, a, b, off + DIMPLE_T, off + SYS_FRONT, FOOT_TOP + DIMPLE_T, top, M["panel"])
     c0, c1 = (p0, p1) if corners else (s_lo + SYS_FRONT + 0.003 + lo_off, s_hi - SYS_FRONT - 0.003 - hi_off)
-    mb.wbox(side, c0, c1, off, off + SYS_FRONT + 0.003, top, top + 0.008, M["panel"])
+    for a, b in around(c0, c1, gap, SYS_PAD):
+        mb.wbox(side, a, b, off, off + SYS_FRONT + 0.003, top, top + 0.008, M["panel"])
     mb.finish(f"PART_WallMembrane_{side}", sec, coll)
 
     # weep holes (block walls only): one per block core in the bottom course, drilled through the
@@ -884,7 +993,7 @@ def build_wall(side, M, root):
         for k in range(math.floor(lo / BLOCK_L) - 1, math.ceil(hi / BLOCK_L) + 1):
             for c in (0.25, 0.75):
                 s = (k + c) * BLOCK_L
-                if lo <= s <= hi:
+                if lo <= s <= hi and not (gap and gap[0] - 0.03 < s < gap[1] + 0.03):
                     center = P(side, s, 0.0, WEEP_Z)
                     mb.bore(center, inward(side), WEEP_R - 0.0006, WEEP_DEPTH, M["bore"], M["hole"])
                     WEEP_CUTS[side].append(center)
@@ -900,18 +1009,22 @@ def build_wall(side, M, root):
         a = s_lo + SUMP_SQ[1]
     if sump_end == "hi":
         b = s_hi - SUMP_SQ[1]
-    mb.wbox(side, a, b, SYS_FRONT + off, TRENCH_W, FOOT_TOP + DIMPLE_T, 0.0, M["patch"], tile=2.0)
+    for a, b in around(a, b, gap):
+        mb.wbox(side, a, b, SYS_FRONT + off, TRENCH_W, FOOT_TOP + DIMPLE_T, 0.0, M["patch"], tile=2.0)
     mb.finish(f"FILL_Patch_{side}", sec, coll)
 
     # 2B stone around the pipe, above the gravel bed (pipe hole is cut later); labeled
     mb = MB()
     a, b = (s_lo + FOOT_PROJ, s_hi - FOOT_PROJ) if corners else (s_lo + TRENCH_W, s_hi - TRENCH_W)
-    mb.wbox(side, a, b, FOOT_PROJ, TRENCH_W, -TRENCH_D + BED_T, FOOT_TOP + DIMPLE_T, M["stone"], tile=0.3)
+    runs = around(a, b, gap)
+    for a, b in runs:
+        mb.wbox(side, a, b, FOOT_PROJ, TRENCH_W, -TRENCH_D + BED_T, FOOT_TOP + DIMPLE_T, M["stone"], tile=0.3)
     mb.finish(f"PART_DrainStone_{side}", sec, coll)
 
     # 1" bed of 1B pea gravel across the trench bottom; the pipe rests on it; labeled
     mb = MB()
-    mb.wbox(side, a, b, FOOT_PROJ, TRENCH_W, -TRENCH_D, -TRENCH_D + BED_T, M["pea"], tile=0.2)
+    for a, b in runs:
+        mb.wbox(side, a, b, FOOT_PROJ, TRENCH_W, -TRENCH_D, -TRENCH_D + BED_T, M["pea"], tile=0.2)
     mb.finish(f"PART_GravelBed_{side}", sec, coll)
 
     # perimeter drain: slotted pipe, corner 90s (N/S own the corners), cleanout tee + capped riser
@@ -922,8 +1035,11 @@ def build_wall(side, M, root):
         lo = s_lo + SUMP_A + TAIL_TURN + L45
     if sump_end == "hi":
         hi = s_hi - SUMP_A - TAIL_TURN - L45
-    mb.cyl(P(side, lo, PIPE_OFF, PIPE_Z), P(side, hi, PIPE_OFF, PIPE_Z), PIPE_R, M["pipe"],
-           vtile=5 * IN, v0=lo)
+    # on the water heater's wall the pipe stops where it jogs out around the heater (that jog, its elbows
+    # included, belongs to SEC_DrainGrate)
+    for a, b in ([(lo, hi)] if gap is None else [(lo, U_S - BEND_R), (U_N + BEND_R, hi)]):
+        mb.cyl(P(side, a, PIPE_OFF, PIPE_Z), P(side, b, PIPE_OFF, PIPE_Z), PIPE_R, M["pipe"],
+               vtile=5 * IN, v0=a)
     av, n = along_vec(side), inward(side)
     if sump_end:                                  # 45 into the side of the sump basin
         # The 45 and the stub into the basin are their own piece that never moves: when the wall opens
@@ -962,12 +1078,16 @@ def build_wall(side, M, root):
 
 def build_floor(M, root):
     sec, coll = section(root, "SEC_FloorSlab")
+    # the slab inside the trenches, notched for the water heater's U trench, plus the island of old slab the
+    # heater stands on (the U goes around it)
     mb = MB()
-    mb.box(XW + TRENCH_W, XE - TRENCH_W, YS + TRENCH_W, YN - TRENCH_W, FOOT_TOP, 0.0, M["concrete"], tile=2.0)
+    mb.prism(slab_outline(), FOOT_TOP, 0.0, M["concrete"], tile=2.0)
+    mb.wbox(WH_SIDE, ISLE[0], ISLE[1], 0, ISLE[2], FOOT_TOP, 0.0, M["concrete"], tile=2.0)
     mb.finish("SHELL_Slab", sec, coll)
     mb = MB()
     mb.box(XW + FOOT_PROJ, XE - FOOT_PROJ, YS + FOOT_PROJ, YN - FOOT_PROJ, SUBBASE_BOTTOM, -TRENCH_D, M["subbase"])
-    mb.box(XW + TRENCH_W, XE - TRENCH_W, YS + TRENCH_W, YN - TRENCH_W, -TRENCH_D, FOOT_TOP, M["subbase"])
+    mb.prism(slab_outline(), -TRENCH_D, FOOT_TOP, M["subbase"])
+    mb.wbox(WH_SIDE, ISLE[0], ISLE[1], FOOT_PROJ, ISLE[2], -TRENCH_D, FOOT_TOP, M["subbase"])
     mb.finish("SHELL_SubBase", sec, coll)
 
 
@@ -1242,6 +1362,125 @@ def build_dehumidifier(M, root):
     label_marker(dh, ((x0 + x1) / 2, (y0 + y1) / 2, zt + 0.01))
 
 
+def build_water_heater(M, root):
+    """Water heater on the east wall with a drain grate around it (David's photo, 2026-11-05). The heater stays
+    put (the viewer fades it while the section is open); the U's pieces lift out of the trench in a stack."""
+    side = WH_SIDE
+    sec, coll = section(root, "SEC_DrainGrate")
+    n, av, up = inward(side), along_vec(side), Vector((0, 0, 1))
+    C = P(side, WH_S, WH_D, 0.0)
+    R, H = WH_R, WH_H
+
+    # ---- water heater: tank, water lines up into the joists (shutoff on the cold), T&P valve with its
+    # discharge pipe, drain valve, wiring box
+    mb = MB()
+    mb.lathe(C, [(0, 0.0), (R - 0.012, 0.0), (R - 0.012, 0.02), (R, 0.035), (R, H - 0.06),
+                 (R - 0.015, H - 0.02), (R - 0.06, H), (0, H)], M["heater"], segs=40)
+    z_top = WALL_TOP + SILL_T + RIM_H
+    for sgn in (-1, 1):                                   # cold (south side), hot (north side)
+        p = C + av * (sgn * 4 * IN)
+        mb.cyl(p + up * (H - 0.01), p + up * (H + 1.5 * IN), 0.55 * IN, M["metal"], segs=16)
+        mb.cyl(p + up * (H + 1.5 * IN), p + up * (H + 2.6 * IN), 0.8 * IN, M["brass"], segs=16)
+        mb.cyl(p + up * (H + 2.6 * IN), Vector((p.x, p.y, z_top)), 0.44 * IN, M["copper"], segs=16)
+        if sgn < 0:
+            zv = H + 10 * IN
+            mb.cyl(p + up * zv, p + up * (zv + 2.4 * IN), 0.75 * IN, M["brass"], segs=16)
+            a = p + up * (zv + 1.1 * IN) - av * (0.3 * IN)
+            b = p + n * (3.5 * IN) + up * (zv + 1.3 * IN) + av * (0.3 * IN)
+            mb.box(a.x, b.x, a.y, b.y, a.z, b.z, M["handle"])
+    zt = H - 6 * IN                                       # T&P valve on the south side, pipe down to 6" off the floor
+    tp0 = C - av * (R - 0.004) + up * zt
+    tp1 = C - av * (R + 2.0 * IN) + up * zt
+    mb.cyl(tp0, tp1, 0.6 * IN, M["brass"], segs=16)
+    mb.box(tp1.x - 0.3 * IN, tp1.x + 0.3 * IN, tp1.y, tp1.y + 1.6 * IN, tp1.z + 0.6 * IN, tp1.z + 0.8 * IN, M["brass"])
+    mb.cyl(tp1, Vector((tp1.x, tp1.y, 6 * IN)), 0.44 * IN, M["copper"], segs=16)
+    d0 = C + n * (R - 0.004) + up * (7 * IN)              # drain valve, facing the room
+    mb.cyl(d0, d0 + n * (1.4 * IN), 0.42 * IN, M["brass"], segs=16)
+    mb.cyl(d0 + n * (1.4 * IN), d0 + n * (2.0 * IN), 0.55 * IN, M["brass"], segs=16)
+    mb.cyl(d0 + n * (0.7 * IN), d0 + n * (0.7 * IN) + up * (0.8 * IN), 0.3 * IN, M["brass"], segs=12)
+    j = C - n * (R - 3 * IN)                              # wiring box on top, conduit up
+    mb.box(j.x - 1.5 * IN, j.x + 1.5 * IN, j.y - 1.5 * IN, j.y + 1.5 * IN, H - 0.012, H + 2 * IN, M["metal"])
+    mb.cyl(j + up * (H + 2 * IN), Vector((j.x, j.y, z_top)), 0.35 * IN, M["metal"], segs=12)
+    mb.finish("SHELL_WaterHeater_WH", sec, coll)
+
+    # ---- the 4" pipe's jog around the island: four 90s and the three runs between them
+    mb = MB()
+    turns = [(P(side, U_S, PIPE_OFF, PIPE_Z), av, n), (P(side, U_S, U_F, PIPE_Z), n, av),
+             (P(side, U_N, U_F, PIPE_Z), av, -n), (P(side, U_N, PIPE_OFF, PIPE_Z), -n, av)]
+    ends = []
+    for K, d_in, d_out in turns:
+        a, b = mb.bend(K, d_in, d_out, BEND_R, FIT_R, M["pvc"])
+        mb.cyl(a - d_in * 0.04, a, FIT_R + 0.004, M["pvc"])
+        mb.cyl(b, b + d_out * 0.04, FIT_R + 0.004, M["pvc"])
+        ends.append((a, b))
+    for (_, b), (a, _) in zip(ends, ends[1:]):
+        mb.cyl(b, a, PIPE_R, M["pipe"], vtile=5 * IN, v0=0.0)
+    pipe = mb.finish("PART_PerimeterDrain_WH", sec, coll)
+    label_marker(pipe, P(side, WH_S - 0.22, U_F, PIPE_Z + PIPE_R))
+    hb = MB()                                             # the holes the adapters drop into (kept apart from the
+    for s, d in ADAPTERS:                                 # pipe so the stone's pipe channel is cut cleanly)
+        hb.pipe_hole(P(side, s, d, PIPE_Z + PIPE_R), av if s == WH_S else n, PIPE_R, ADAPT_R + 0.002, M["hole"])
+    holes = hb.finish("DECAL_PipeHoles_WH", sec, coll)
+    holes.parent = pipe
+
+    # ---- trench fill: 1" pea gravel bed, 2B stone up to the channel's underside, concrete beside the channel
+    legs = [(ISLE[0] - U_W, ISLE[0]), (ISLE[1], ISLE[1] + U_W)]
+    mb = MB()
+    for s0, s1 in legs:
+        mb.wbox(side, s0, s1, FOOT_PROJ, U_OUT, -TRENCH_D, -TRENCH_D + BED_T, M["pea"], tile=0.2)
+    mb.wbox(side, ISLE[0], ISLE[1], ISLE[2], U_OUT, -TRENCH_D, -TRENCH_D + BED_T, M["pea"], tile=0.2)
+    bed = mb.finish("PART_GravelBed_WH", sec, coll)
+    label_marker(bed, P(side, U_N, U_OUT - 0.1, -TRENCH_D + BED_T))
+    mb = MB()
+    for s0, s1 in legs:
+        mb.wbox(side, s0, s1, FOOT_PROJ, U_OUT, -TRENCH_D + BED_T, FOOT_TOP, M["stone"], tile=0.3)
+    mb.wbox(side, ISLE[0], ISLE[1], ISLE[2], U_OUT, -TRENCH_D + BED_T, FOOT_TOP, M["stone"], tile=0.3)
+    stone = mb.finish("PART_DrainStone_WH", sec, coll)
+    label_marker(stone, P(side, U_S, U_OUT - 0.1, FOOT_TOP))
+    gw = GRATE_W / 2
+    mb = MB()
+    for s0, s1, d1 in ((ISLE[0] - U_W, U_S - gw, U_OUT), (U_S + gw, ISLE[0], U_F - gw),
+                       (ISLE[1], U_N - gw, U_F - gw), (U_N + gw, ISLE[1] + U_W, U_OUT)):
+        mb.wbox(side, s0, s1, 0, d1, FOOT_TOP, 0.0, M["patch"], tile=2.0)
+    mb.wbox(side, U_S - gw, U_N + gw, U_F + gw, U_OUT, FOOT_TOP, 0.0, M["patch"], tile=2.0)
+    mb.wbox(side, ISLE[0], ISLE[1], ISLE[2], U_F - gw, FOOT_TOP, 0.0, M["patch"], tile=2.0)
+    mb.finish("FILL_Patch_WH", sec, coll)
+
+    # ---- channel drain: legs back to the wall and a front run, grate on top, outlet hubs underneath
+    mb = MB()
+    for c in (U_S, U_N):                                  # (2 mm off the wall, so it lifts clear of it)
+        mb.wbox(side, c - gw, c + gw, 0.002, U_F + gw, FOOT_TOP, 0.0, M["channel"])
+    mb.wbox(side, U_S + gw, U_N - gw, U_F - gw, U_F + gw, FOOT_TOP, 0.0, M["channel"])
+    lip, zg = GRATE_LIP, 0.0006
+    for c in (U_S, U_N):                                  # grate: slots run across it (u along, v across)
+        s0, s1, d0, d1 = c - gw + lip, c + gw - lip, lip, U_F + gw - lip
+        mb.quad([P(side, s0, d0, zg), P(side, s1, d0, zg), P(side, s1, d1, zg), P(side, s0, d1, zg)],
+                [(d0 / IN, 0), (d0 / IN, 1), (d1 / IN, 1), (d1 / IN, 0)], M["grate"])
+    s0, s1, d0, d1 = U_S + gw - lip, U_N - gw + lip, U_F - gw + lip, U_F + gw - lip
+    mb.quad([P(side, s0, d0, zg), P(side, s1, d0, zg), P(side, s1, d1, zg), P(side, s0, d1, zg)],
+            [(s0 / IN, 0), (s1 / IN, 0), (s1 / IN, 1), (s0 / IN, 1)], M["grate"])
+    for s, d in ADAPTERS:
+        mb.cyl(P(side, s, d, HUB_Z), P(side, s, d, FOOT_TOP + 0.002), 1.35 * IN, M["channel"], segs=20)
+    grate = mb.finish("PART_DrainGrate_WH", sec, coll)
+    label_marker(grate, P(side, WH_S + 0.22, U_F, 0.0))
+
+    # ---- 1.5" PVC male adapters: threads up in the channel's hub, hex, socket end down into the pipe
+    mb = MB()
+    for s, d in ADAPTERS:
+        c = P(side, s, d, 0.0)
+        at = lambda z: Vector((c.x, c.y, z))
+        # (only 0.8" between the channel and the pipe: the threads hide in the hub, the hex sits in the gap)
+        mb.cyl(at(HUB_Z - 0.1 * IN), at(FOOT_TOP - 0.003), 0.95 * IN, M["pvc"], segs=20)          # threads
+        for k in range(3):
+            z = HUB_Z + (0.03 + 0.09 * k) * IN
+            mb.cyl(at(z), at(z + 0.04 * IN), 1.0 * IN, M["pvc"], segs=20)
+        mb.cyl(at(HUB_Z - 0.3 * IN), at(HUB_Z - 0.1 * IN), 1.25 * IN, M["pvc"], segs=6)          # hex
+        mb.cyl(at(PIPE_Z + PIPE_R - 0.6 * IN), at(HUB_Z - 0.3 * IN), ADAPT_R, M["pvc"], segs=20)   # socket
+    ad = mb.finish("PART_MaleAdapter_WH", sec, coll)
+    s, d = ADAPTERS[1]
+    label_marker(ad, P(side, s, d, HUB_Z - 0.2 * IN))
+
+
 def temp_object(root, name, fill):
     mb = MB()
     fill(mb)
@@ -1277,6 +1516,12 @@ def subtract(target, cutter):
         print("WARNING: boolean failed for", target.name)
         bpy.data.meshes.remove(new)
         return
+    bm = bmesh.new()                                      # drop the odd zero-area sliver the cut can leave
+    bm.from_mesh(new)
+    bmesh.ops.dissolve_degenerate(bm, dist=1e-6, edges=bm.edges[:])
+    bm.to_mesh(new)
+    bm.free()
+    new.validate(clean_customdata=False)                  # what the glTF exporter would otherwise fix (and warn about)
     new.materials.clear()
     new.materials.append(mat)
     for p in new.polygons:
@@ -1320,6 +1565,11 @@ def cut_holes(root):
         if o.name.startswith(("PART_DrainStone_", "PART_GravelBed_")) or o.name == "FILL_SumpStone_NW":
             subtract(o, chan)
     remove_temp(chan)
+    # the male adapters' holes down through the stone around the water heater
+    ad = temp_object(root, "TMP_adapters", lambda mb: [mb.cyl(P(WH_SIDE, s, d, PIPE_Z), P(WH_SIDE, s, d, FOOT_TOP + 0.01),
+                                                              ADAPT_R + 0.003, None, segs=20) for s, d in ADAPTERS])
+    subtract(objs["PART_DrainStone_WH"], ad)
+    remove_temp(ad)
     basin = temp_object(root, "TMP_basin", lambda mb: mb.lathe(SUMP_C, [
         (0, -BASIN_D - 0.001), (BASIN_RB + 0.002, -BASIN_D - 0.001), (BASIN_RT + 0.002, -0.012),
         (BASIN_FLANGE, -0.012), (BASIN_FLANGE, 0.2), (0, 0.2)], None, segs=40))
@@ -1339,6 +1589,7 @@ def build():
     build_sump(M, root)
     build_window_well(M, root)
     build_dehumidifier(M, root)
+    build_water_heater(M, root)
     build_crack(M, root)
     cut_holes(root)
     os.makedirs(os.path.dirname(BLEND_PATH), exist_ok=True)

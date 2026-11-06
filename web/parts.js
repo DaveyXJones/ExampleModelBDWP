@@ -89,6 +89,16 @@ export const PART_INFO = {
     text: 'Keeps water from spilling into or under your basement windows.',
   },
 
+  // ---- water heater with a drain grate around it (east wall) ----
+  DrainGrate: {
+    title: 'Drain Grate',
+    text: 'A channel drain set flush in the floor in a U around the water heater. Its legs run back to the wall where the wall system stops, so water from the wall or a leaking tank drops through the grate into the drain pipe below.',
+  },
+  MaleAdapter: {
+    title: '1.5" PVC Male Adapters',
+    text: 'Connect the bottom of the drain grate to the 4" drain pipe underneath. We use 1 to 3 of them, depending on the job.',
+  },
+
   // ---- crack in the poured wall (pump injection ports/hookup to be added once we have the reference) ----
   CrackRepair: {
     title: 'Crack Injection',
@@ -129,6 +139,14 @@ export const EXPLODE = {
   DischargeLine:    {},   // label position comes from the model (LBL_ empty)
   BackupBattery:    { label: { h: 0.95 } },
 
+  // drain grate around the water heater (SEC_DrainGrate): the pieces lift straight up out of the U trench into
+  // a stack in install order (pea gravel lowest, grate on top), top pieces first, so nothing crosses anything
+  // on the way. Gaps of 10-25 cm let you see each layer from the room. The concrete beside the grate just fades
+  // away where it is (SECTIONS below), leaving the dug-out U. Labels are pinned in the model (LBL_ empties),
+  // since a U's middle is empty.
+  DrainGrate:       { in: 0, up: 1.12, order: 0 },
+  MaleAdapter:      { in: 0, up: 1.02, order: 1 },
+
   // window well: slides along the wall to uncover the window and the gravel bed under it
   WindowWell:       { in: 0.55, along: 1.15, up: 0 },
   // dehumidifier: a small lift so it is clear it's selected
@@ -145,7 +163,11 @@ export const SECTIONS = {
     title: 'Standard 2 ft wall system', inward: [0, 0, 1], along: [1, 0, 0],
     hides: ['PART_Dehumidifier_N', 'PART_BackupBattery_NW'],
   },
-  SEC_WallEast:  { title: 'Standard 2 ft wall system', inward: [-1, 0, 0], along: [0, 0, 1] },
+  // the water heater's U takes the middle of this wall, so two labels move along to stay on their pieces
+  SEC_WallEast:  {
+    title: 'Standard 2 ft wall system', inward: [-1, 0, 0], along: [0, 0, 1],
+    explode: { DimpleBoard: { label: { t: -0.4, h: 0.85 } }, DrainStone: { label: { t: -0.3, h: 0.95 } } },
+  },
   SEC_WallSouth: { title: 'Standard 2 ft wall system', inward: [0, 0, -1], along: [-1, 0, 0] },
   // the standard 2 ft system on the upgrade wall lands farther out, in front of the barrier (0.28) but
   // short of the sump's discharge pipe, which rises 0.58 m out from this wall
@@ -154,6 +176,17 @@ export const SECTIONS = {
     explode: { DimpleBoard: { in: 0.36, up: 0.58 }, WallMembrane: { in: 0.45, up: 1.15 } },
   },
   SEC_SumpArea:  { title: 'Sump pump system with battery backup', inward: [0.7071, 0, 0.7071], along: [0.7071, 0, -0.7071] },
+  // the water heater fades out while this is open, so the U trench around it shows
+  SEC_DrainGrate: {
+    title: 'Drain grate around the water heater', inward: [-1, 0, 0], along: [0, 0, 1],
+    hides: ['SHELL_WaterHeater_WH'],
+    explode: {
+      Patch:          { in: 0, up: 0, order: 0, fade: 0 },   // gone before the stone comes up through it
+      DrainStone:     { in: 0, up: 0.80, order: 3 },
+      PerimeterDrain: { in: 0, up: 0.45, order: 4 },
+      GravelBed:      { in: 0, up: 0.22, order: 5 },
+    },
+  },
   SEC_WindowWell:   { title: 'Window well', inward: [0, 0, 1], along: [1, 0, 0] },  // 'in' = away from the house here
   SEC_Dehumidifier: { title: 'Dehumidifier', inward: [0, 0, 1], along: [1, 0, 0] },
   // the crack is on the north wall, so it turns see-through together with that wall
