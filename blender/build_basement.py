@@ -52,11 +52,12 @@ FOOT_PROJ = 6 * IN                          # footing sticks out 6" past the wal
 COURSE, BLOCK_L = 8 * IN, 16 * IN
 N_COURSES = 12
 WALL_TOP = FOOT_TOP + N_COURSES * COURSE    # ~7'8" above the floor
-TRENCH_W = 12 * IN                          # measured from the wall face
+TRENCH_W = 17 * IN                          # an average trench, measured from the wall face
 TRENCH_D = 10 * IN                          # measured from the top of the floor (confirmed)
 PIPE_R = 4.2 * IN / 2                       # 4" ribbed slotted PVC, ~4.2" OD
 FIT_R = PIPE_R + 0.006                      # fittings are a bit fatter
-PIPE_OFF = (FOOT_PROJ + TRENCH_W) / 2       # pipe sits beside the footing
+PIPE_OFF = FOOT_PROJ + PIPE_R + 0.5 * IN    # pipe sits beside the footing, so its cleanout cap lands in the
+                                            # middle of the new concrete over the 17" trench
 BED_T = 1 * IN                              # 1" bed of 1B pea gravel on the trench bottom
 PIPE_Z = -TRENCH_D + BED_T + PIPE_R         # the pipe rests on that bed
 BEND_R = 0.10                               # 90 elbow centerline radius
@@ -125,7 +126,7 @@ CRACK_FROM = (WINDOWS["N"][0], WALL_TOP - WIN_H)
 CRACK_TO = (0.36, 0.62)                     # (x, z); ends above the 2 ft wall panel
 
 # ---- dehumidifier (floor, north wall, east of the sump battery; drains into the sump) ----
-DEHU = (XW + 1.55, XW + 2.10, YN - 0.60, YN - 0.32)   # x0, x1, y front, y back (clear of the trench)
+DEHU = (XW + 1.55, XW + 2.10, YN - 0.60, YN - 0.32)   # x0, x1, y front, y back (partly on the trench patch)
 DEHU_H = 0.53
 
 

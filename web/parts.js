@@ -100,13 +100,14 @@ export const EXPLODE = {
   WallMembrane:     { in: 0.30, up: 1.15, order: 0, label: { t: -0.32, h: 0.95 } },
   DimpleBoard:     { in: 0.15, up: 0.58, order: 1, label: { t: -0.1, h: 0.85 } },
   WeepHoles:        { in: 0.00, up: 0.00, order: 0, label: { t: 0.1, h: 0.5 } },
-  PerimeterDrain:   { in: 0.45, up: 0.34, order: 2, label: { t: 0.3, h: 0.6 } },
-  DrainStone:       { in: 0.85, up: 0.30, order: 1, label: { t: -0.24, h: 0.95 } },
-  // the 1" pea gravel bed slides out from under the pipe and lands farthest out, past the patch, continuing
-  // the 0.40 m spacing (pipe 0.45, stone 0.85, patch 1.25, bed 1.65). Anywhere closer, a taller piece hid it
-  // or it hid the pipe. Clear of the dehumidifier and the sump all the way out.
-  GravelBed:        { in: 1.65, up: 0.30, order: 2, label: { t: 0.2, h: 0.5 } },
-  Patch:            { in: 1.25, up: 0.15, order: 0 },
+  PerimeterDrain:   { in: 0.35, up: 0.34, order: 2, label: { t: 0.3, h: 0.6 } },  // its corner 90s reach 0.2 m past it
+  // trench pieces land in a row with ~8 cm between them (17" trench: stone and bed are 11" wide, the patch
+  // 16.5"), each lower than the one before, so all show from inside the room: pipe 0.35, stone 0.65,
+  // patch 1.15, bed 1.51. The 1" pea gravel bed goes last: anywhere closer, a taller piece hid it or it
+  // hid the pipe.
+  DrainStone:       { in: 0.65, up: 0.30, order: 1, label: { t: -0.24, h: 0.95 } },
+  GravelBed:        { in: 1.51, up: 0.30, order: 2, label: { t: 0.2, h: 0.5 } },
+  Patch:            { in: 1.15, up: 0.15, order: 0 },
 
   // full-wall upgrade (west wall): the dimple board behind the barrier stays on the wall; the barrier
   // moves out last, rises enough to show the bottom of that dimple board, and turns see-through so the
