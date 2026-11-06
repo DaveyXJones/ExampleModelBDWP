@@ -9,7 +9,9 @@ Run it inside Blender (Claude runs it through the Blender MCP):
     exec(open(p).read(), {"__file__": p, "RUN": "all"})
 
 RUN = "build"  -> rebuild the model and save blender/bdry_basement.blend
-RUN = "export" -> export exports/bdry_basement.glb (Draco) and copy it to web/models/
+RUN = "export" -> export exports/bdry_basement.glb (Draco) and copy it to web/models/,
+                  plus exports/bdry_basement_nodraco.glb without Draco, for hosts where the
+                  viewer can't fetch the Draco decoder from the CDN
 RUN = "all"    -> both
 
 Coordinates: meters, Z up, +Y = north, top of the floor slab at Z = 0.
@@ -35,6 +37,7 @@ RUN = globals().get("RUN", "all")
 TEX_DIR = os.path.join(PROJECT, "blender", "textures")
 BLEND_PATH = os.path.join(PROJECT, "blender", "bdry_basement.blend")
 GLB_PATH = os.path.join(PROJECT, "exports", "bdry_basement.glb")
+GLB_NODRACO_PATH = os.path.join(PROJECT, "exports", "bdry_basement_nodraco.glb")
 WEB_GLB_PATH = os.path.join(PROJECT, "web", "models", "bdry_basement.glb")
 ROOT_COLL = "BDRY_Model"
 
@@ -1345,20 +1348,26 @@ def build():
     print(f"built {len(objs)} objects, ~{tris} triangles, saved {BLEND_PATH}")
 
 
-def export():
+def export(draco=True):
     root = bpy.data.collections[ROOT_COLL]
     names = {o.name for o in model_objects(root)}
     for o in bpy.context.view_layer.objects:
         o.select_set(o.name in names)
-    os.makedirs(os.path.dirname(GLB_PATH), exist_ok=True)
+    path = GLB_PATH if draco else GLB_NODRACO_PATH
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    compression = dict(
+        export_draco_mesh_compression_level=6, export_draco_position_quantization=14,
+        export_draco_normal_quantization=10, export_draco_texcoord_quantization=12,
+    ) if draco else {}
     bpy.ops.export_scene.gltf(
-        filepath=GLB_PATH, export_format="GLB", use_selection=True, export_apply=True,
+        filepath=path, export_format="GLB", use_selection=True, export_apply=True,
         export_yup=True, export_extras=True, export_cameras=False, export_lights=False,
         export_image_format="AUTO",
-        export_draco_mesh_compression_enable=True, export_draco_mesh_compression_level=6,
-        export_draco_position_quantization=14, export_draco_normal_quantization=10,
-        export_draco_texcoord_quantization=12,
+        export_draco_mesh_compression_enable=draco, **compression,
     )
+    if not draco:
+        print(f"exported {path} ({os.path.getsize(path) / 1e6:.2f} MB, no Draco)")
+        return
     os.makedirs(os.path.dirname(WEB_GLB_PATH), exist_ok=True)
     shutil.copy2(GLB_PATH, WEB_GLB_PATH)
     print(f"exported {GLB_PATH} ({os.path.getsize(GLB_PATH) / 1e6:.2f} MB) and copied to {WEB_GLB_PATH}")
@@ -1368,3 +1377,4 @@ if RUN in ("build", "all"):
     build()
 if RUN in ("export", "all"):
     export()
+    export(draco=False)
